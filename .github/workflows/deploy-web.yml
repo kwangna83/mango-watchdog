@@ -34,6 +34,61 @@ jobs:
       - name: Analyze
         run: flutter analyze
 
+      - name: Generate Firebase messaging service worker
+        env:
+          FIREBASE_WEB_API_KEY: ${{ secrets.FIREBASE_WEB_API_KEY }}
+          FIREBASE_WEB_AUTH_DOMAIN: ${{ secrets.FIREBASE_WEB_AUTH_DOMAIN }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+          FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
+          FIREBASE_WEB_APP_ID: ${{ secrets.FIREBASE_WEB_APP_ID }}
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const env = process.env;
+          const required = ['FIREBASE_WEB_API_KEY', 'FIREBASE_WEB_AUTH_DOMAIN', 'FIREBASE_PROJECT_ID', 'FIREBASE_STORAGE_BUCKET', 'FIREBASE_MESSAGING_SENDER_ID', 'FIREBASE_WEB_APP_ID'];
+          for (const key of required) {
+            if (!env[key]) throw new Error(`${key} GitHub Secret is missing`);
+          }
+          const config = required.reduce((result, key) => {
+            const configKey = key.replace('FIREBASE_WEB_', '').replace('FIREBASE_', '').toLowerCase();
+            const mapping = {
+              firebase_web_api_key: 'apiKey',
+              firebase_web_auth_domain: 'authDomain',
+              firebase_project_id: 'projectId',
+              firebase_storage_bucket: 'storageBucket',
+              firebase_messaging_sender_id: 'messagingSenderId',
+              firebase_web_app_id: 'appId',
+            };
+            result[mapping[key.toLowerCase()]] = env[key];
+            return result;
+          }, {});
+          const content = `importScripts('https://www.gstatic.com/firebasejs/10.13.2/firebase-app-compat.js');
+          importScripts('https://www.gstatic.com/firebasejs/10.13.2/firebase-messaging-compat.js');
+
+          firebase.initializeApp(${JSON.stringify(config, null, 2)});
+          const messaging = firebase.messaging();
+          self.addEventListener('install', () => self.skipWaiting());
+          self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
+          messaging.onBackgroundMessage((message) => {
+            if (message.notification) return;
+            const data = message.data || {};
+            self.registration.showNotification(data.title || 'mango-watchdog', {
+              body: data.body || '예약 가능 상태가 변경되었습니다.',
+              icon: 'icons/Icon-192.png',
+              badge: 'icons/Icon-192.png',
+              data,
+            });
+          });
+          self.addEventListener('notificationclick', (event) => {
+            event.notification.close();
+            const target = event.notification.data?.url || new URL('./', self.registration.scope).href;
+            event.waitUntil(clients.openWindow(target));
+          });
+          `;
+          fs.writeFileSync('web/firebase-messaging-sw.js', content);
+          NODE
+
       - name: Build web app
         run: >-
           flutter build web --release
