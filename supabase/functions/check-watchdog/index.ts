@@ -4,6 +4,17 @@ const url = Deno.env.get('SUPABASE_URL')!;
 const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
 const admin = createClient(url, serviceKey);
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
+
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
 
 type Monitor = { id:string; owner_id:string; adapter_key:string; config:Record<string,unknown>; enabled:boolean; interval_minutes:number; last_checked_at:string|null };
 type Result = { matched:boolean; summary:string; httpStatus:number; excerpt?:string };
@@ -29,7 +40,8 @@ async function userId(req: Request): Promise<string|null> {
 }
 
 Deno.serve(async (req) => {
-  if (req.method !== 'POST') return new Response('Method Not Allowed', {status:405});
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  if (req.method !== 'POST') return json({ error: 'Method Not Allowed' }, 405);
   const auth = req.headers.get('authorization') ?? '';
   const cronSecret = Deno.env.get('WATCHDOG_CRON_SECRET');
   const privileged = auth === `Bearer ${serviceKey}` || (cronSecret && auth === `Bearer ${cronSecret}`);
@@ -37,12 +49,12 @@ Deno.serve(async (req) => {
   let monitors: Monitor[] = [];
   if (privileged) {
     const q = admin.from('watch_monitors').select('*').eq('enabled', true);
-    const {data,error} = await q; if (error) return Response.json({error:error.message},{status:500}); monitors = data as Monitor[];
+    const {data,error} = await q; if (error) return json({error:error.message},500); monitors = data as Monitor[];
   } else {
-    const owner = await userId(req); if (!owner) return Response.json({error:'Unauthorized'},{status:401});
+    const owner = await userId(req); if (!owner) return json({error:'Unauthorized'},401);
     let q = admin.from('watch_monitors').select('*').eq('owner_id', owner);
     if (!input.monitor_id) q = q.eq('enabled', true); else q = q.eq('id', input.monitor_id);
-    const {data,error} = await q; if (error) return Response.json({error:error.message},{status:500}); monitors = data as Monitor[];
+    const {data,error} = await q; if (error) return json({error:error.message},500); monitors = data as Monitor[];
   }
   const now = Date.now(); const results:any[] = [];
   for (const monitor of monitors) {
@@ -58,5 +70,5 @@ Deno.serve(async (req) => {
       results.push({id:monitor.id,error:message});
     }
   }
-  return Response.json({processed:results.length, results});
+  return json({processed:results.length, results});
 });
