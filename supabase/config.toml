@@ -1,0 +1,24 @@
+project_id = "mangotalk"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 17
+
+[auth]
+enabled = true
+site_url = "io.supabase.mangotalk://login-callback"
+enable_signup = true
+enable_anonymous_sign_ins = true
+
+[realtime]
+enabled = true
+
+[functions.send-message-push]
+verify_jwt = false
