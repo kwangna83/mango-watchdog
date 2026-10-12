@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const url = Deno.env.get('SUPABASE_URL')!;
 const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const admin = createClient(url, serviceKey);
+const scheduleGraceMs = 30_000;
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -60,7 +61,10 @@ Deno.serve(async (req) => {
   }
   const now = Date.now(); const results:any[] = [];
   for (const monitor of monitors) {
-    if (!input.force && monitor.last_checked_at && now - Date.parse(monitor.last_checked_at) < monitor.interval_minutes * 60_000) continue;
+    // Cron can fire a few milliseconds before the exact interval boundary.
+    // Keep a small grace window so a 5-minute schedule is not skipped at 14:15:00.
+    const minimumIntervalMs = Math.max(0, monitor.interval_minutes * 60_000 - scheduleGraceMs);
+    if (!input.force && monitor.last_checked_at && now - Date.parse(monitor.last_checked_at) < minimumIntervalMs) continue;
     const started = Date.now();
     try {
       const result = monitor.adapter_key === 'amano_booking' ? await amano(monitor.config) : (() => { throw new Error(`알 수 없는 adapter_key: ${monitor.adapter_key}`); })();
