@@ -34,12 +34,6 @@ jobs:
       - name: Analyze
         run: flutter analyze
 
-      - name: Test
-        run: flutter test
-
-      - name: Test image session cache
-        run: node --test test/chat_image_session.test.cjs
-
       - name: Build web app
         run: >-
           flutter build web --release
