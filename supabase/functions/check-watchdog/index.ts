@@ -2,7 +2,6 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const url = Deno.env.get('SUPABASE_URL')!;
 const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
 const admin = createClient(url, serviceKey);
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -34,9 +33,12 @@ async function amano(config:Record<string,unknown>): Promise<Result> {
 }
 
 async function userId(req: Request): Promise<string|null> {
-  const auth = req.headers.get('authorization'); if (!auth) return null;
-  const client = createClient(url, anonKey, {global:{headers:{authorization:auth}}});
-  const {data} = await client.auth.getUser(); return data.user?.id ?? null;
+  const auth = req.headers.get('authorization') ?? '';
+  const token = auth.match(/^Bearer\s+(.+)$/i)?.[1];
+  if (!token) return null;
+  const {data, error} = await admin.auth.getUser(token);
+  if (error) return null;
+  return data.user?.id ?? null;
 }
 
 Deno.serve(async (req) => {
